@@ -28,21 +28,39 @@ namespace Nuke.Common.Execution
             if (!Directory.Exists(Constants.GetNukeDirectory(NukeBuild.RootDirectory)))
                 return;
 
-            var parameterMembers = ValueInjectionUtility.GetParameterMembers(build.GetType(), includeUnlisted: true);
-            var passwords = new Dictionary<string, string>();
 
-            IEnumerable<string> ConvertToArguments(string profile, string name, string[] values)
-            {
-                var member = parameterMembers.SingleOrDefault(x => ParameterService.GetParameterMemberName(x).EqualsOrdinalIgnoreCase(name));
-                var scalarType = member?.GetMemberType().GetScalarType();
-                var mustDecrypt = (member?.HasCustomAttribute<SecretAttribute>() ?? false) && !BuildServerConfigurationGeneration.IsActive;
-                var decryptedValues = values.Select(x => mustDecrypt ? DecryptValue(profile, name, x) : x);
-                var convertedValues = decryptedValues.Select(x => ConvertValue(scalarType, x)).ToList();
-                Log.Verbose("Passing value for {Member} ({Value})",
-                    member?.GetDisplayName() ?? "<unresolved>",
-                    !mustDecrypt ? convertedValues.JoinComma() : "secret");
-                return new[] { $"--{ParameterService.GetParameterDashedName(name)}" }.Concat(convertedValues);
-            }
+            // IEnumerable<string> ConvertToArguments(string profile, string name, string[] values)
+            // {
+            //     var member = parameterMembers.SingleOrDefault(x => ParameterService.GetParameterMemberName(x).EqualsOrdinalIgnoreCase(name));
+            //     var scalarType = member?.GetMemberType().GetScalarType();
+            //     var mustDecrypt = (member?.HasCustomAttribute<SecretAttribute>() ?? false) && !BuildServerConfigurationGeneration.IsActive;
+            //     var decryptedValues = values.Select(x => mustDecrypt ? DecryptValue(profile, name, x) : x);
+            //     var convertedValues = decryptedValues.Select(x => ConvertValue(scalarType, x)).ToList();
+            //     Log.Verbose("Passing value for {Member} ({Value})",
+            //         member?.GetDisplayName() ?? "<unresolved>",
+            //         !mustDecrypt ? convertedValues.JoinComma() : "secret");
+            //     return new[] { $"--{ParameterService.GetParameterDashedName(name)}" }.Concat(convertedValues);
+            // }
+            //
+
+            //
+            // // TODO: Abstract AbsolutePath/Solution/Project etc.
+            // string ConvertValue(Type scalarType, string value)
+            //     => scalarType == typeof(AbsolutePath) ||
+            //        typeof(Solution).IsAssignableFrom(scalarType) ||
+            //        scalarType == typeof(Project)
+            //         ? EnvironmentInfo.WorkingDirectory.GetUnixRelativePathTo(NukeBuild.RootDirectory / value)
+            //         : value;
+
+            var parameterMembers = ValueInjectionUtility.GetParameterMembers(build.GetType(), includeUnlisted: true);
+            var jobjectsAndProfiles = new[] { (File: Constants.GetDefaultParametersFile(NukeBuild.RootDirectory), Profile: Constants.DefaultProfileName) }
+                .Where(x => File.Exists(x.File))
+                .Concat(NukeBuild.LoadedLocalProfiles.Select(x => (File: Constants.GetParametersProfileFile(NukeBuild.RootDirectory, x), Profile: x)))
+                .ForEachLazy(x => Assert.FileExists(x.File))
+                .Select(x => (JObject: JObject.Parse(File.ReadAllText(x.File)), x.Profile))
+                .Reverse();
+
+            var passwords = new Dictionary<string, string>();
 
             string DecryptValue(string profile, string name, string value)
                 => EncryptionUtility.Decrypt(
@@ -50,47 +68,27 @@ namespace Nuke.Common.Execution
                     passwords[profile] = passwords.GetValueOrDefault(profile) ?? EncryptionUtility.GetPassword(profile),
                     name);
 
-            // TODO: Abstract AbsolutePath/Solution/Project etc.
-            string ConvertValue(Type scalarType, string value)
-                => scalarType == typeof(AbsolutePath) ||
-                   typeof(Solution).IsAssignableFrom(scalarType) ||
-                   scalarType == typeof(Project)
-                    ? EnvironmentInfo.WorkingDirectory.GetUnixRelativePathTo(NukeBuild.RootDirectory / value)
-                    : value;
-
-            var arguments = GetParameters().SelectMany(x => ConvertToArguments(x.Profile, x.Name, x.Values)).ToArray();
-            ParameterService.Instance.ArgumentsFromFilesService = new ParameterService(() => arguments, () => throw new NotSupportedException());
-        }
-
-        private IEnumerable<(string Profile, string Name, string[] Values)> GetParameters()
-        {
-            IEnumerable<string> GetValues(JProperty property)
-            // TODO: if property is object || property is array && array contains objects => base64
-                => property.Value is JArray array
-                    ? array.Values<string>()
-                    : property.Values<string>();
-
-            IEnumerable<(string Name, string[] Values)> Load(AbsolutePath file)
+            ParameterService.Instance.ArgumentsFromFilesService = (parameter, destinationType) =>
             {
-                try
-                {
-                    var jobject = JObject.Parse(File.ReadAllText(file));
-                    // TODO: use NukeBuild instance to match members and walk through structure to replace secrets and absolute-paths
-                    return jobject.Properties()
-                        .Where(x => x.Name != "$schema")
-                        .Select(x => (x.Name, GetValues(x).ToArray()));
-                }
-                catch (Exception exception)
-                {
-                    throw new Exception($"Failed parsing parameters file '{file}'.", exception);
-                }
-            }
+                var (property, profile) = jobjectsAndProfiles.Select(x => (Property: x.JObject.Property(parameter), x.Profile))
+                    .Where(x => x.Property != null)
+                    .FirstOrDefault();
+                if (property == null)
+                    return null;
 
-            return new[] { (File: Constants.GetDefaultParametersFile(NukeBuild.RootDirectory), Profile: Constants.DefaultProfileName) }
-                .Where(x => File.Exists(x.File))
-                .Concat(NukeBuild.LoadedLocalProfiles.Select(x => (File: Constants.GetParametersProfileFile(NukeBuild.RootDirectory, x), Profile: x)))
-                .ForEachLazy(x => Assert.FileExists(x.File))
-                .SelectMany(x => Load(x.File), (x, r) => (x.Profile, r.Name, r.Values));
+                var member = parameterMembers.SingleOrDefault(x => ParameterService.GetParameterMemberName(x).EqualsOrdinalIgnoreCase(parameter));
+                var scalarType = member?.GetMemberType().GetScalarType();
+                if (scalarType == typeof(AbsolutePath) ||
+                    typeof(Solution).IsAssignableFrom(scalarType) ||
+                    scalarType == typeof(Project))
+                    return NukeBuild.RootDirectory / property.Value.ToObject<string>();
+
+                if ((member?.HasCustomAttribute<SecretAttribute>() ?? false) &&
+                    !BuildServerConfigurationGeneration.IsActive)
+                    return DecryptValue(profile, parameter, property.Value.ToObject<string>());
+
+                return property.Value.ToObject(destinationType);
+            };
         }
     }
 }

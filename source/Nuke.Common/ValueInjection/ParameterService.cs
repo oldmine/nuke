@@ -22,7 +22,7 @@ namespace Nuke.Common.ValueInjection
             () => EnvironmentInfo.CommandLineArguments.Skip(count: 1),
             () => EnvironmentInfo.Variables);
 
-        internal ParameterService ArgumentsFromFilesService;
+        internal Func<string, Type, object> ArgumentsFromFilesService;
         internal ParameterService ArgumentsFromCommitMessageService;
 
         private readonly Func<IEnumerable<string>> _commandLineArgumentsProvider;
@@ -159,7 +159,7 @@ namespace Nuke.Common.ValueInjection
 
             // TODO: nuke <target> ?
             object TryFromProfileArguments() =>
-                ArgumentsFromFilesService?.GetCommandLineArgument(parameterName, destinationType, separator);
+                ArgumentsFromFilesService?.Invoke(parameterName, destinationType);
 
             object TryFromCommitMessageArguments() =>
                 ArgumentsFromCommitMessageService?.GetCommandLineArgument(parameterName, destinationType, separator);

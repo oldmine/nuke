@@ -48,6 +48,12 @@ project {
             options = listOf("Debug" to "Debug", "Release" to "Release"),
             display = ParameterDisplay.NORMAL)
         text (
+            "env.Data2",
+            label = "Data2",
+            value = "Build+Data Build+Data",
+            allowEmpty = true,
+            display = ParameterDisplay.NORMAL)
+        text (
             "env.GitterRoomId",
             label = "GitterRoomId",
             value = "593f3dadd73408ce4f66db89",

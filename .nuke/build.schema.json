@@ -24,6 +24,12 @@
           "type": "boolean",
           "description": "Indicates to continue a previously failed build attempt"
         },
+        "Data2": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "GitHubRegistryApiKey": {
           "type": "string",
           "default": "Secrets must be entered via 'nuke :secrets [profile]'"
@@ -123,6 +129,7 @@
               "Clean",
               "Compile",
               "DownloadLicenses",
+              "Foo",
               "GenerateGlobalSolution",
               "GeneratePublicApi",
               "GenerateTools",
@@ -166,6 +173,7 @@
               "Clean",
               "Compile",
               "DownloadLicenses",
+              "Foo",
               "GenerateGlobalSolution",
               "GeneratePublicApi",
               "GenerateTools",

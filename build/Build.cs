@@ -66,12 +66,26 @@ partial class Build
     AbsolutePath OutputDirectory => RootDirectory / "output";
     AbsolutePath SourceDirectory => RootDirectory / "source";
 
+    public class Data
+    {
+        public string FirstName;
+        public Data Nested;
+    }
+
     const string MasterBranch = "master";
     const string DevelopBranch = "develop";
     const string ReleaseBranchPrefix = "release";
     const string HotfixBranchPrefix = "hotfix";
 
     AbsolutePath IHazArtifacts.ArtifactsDirectory => RootDirectory / "output";
+
+    [Parameter] readonly Data[] Data2;
+
+    Target Foo => _ => _
+        .Executes(() =>
+        {
+            Console.WriteLine(Data2);
+        });
 
     Target Clean => _ => _
         .Before<IRestore>()
