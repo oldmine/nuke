@@ -12,6 +12,7 @@ using Nuke.Common.Utilities.Collections;
 
 namespace Nuke.Common.Utilities;
 
+[PublicAPI]
 public static partial class ReflectionUtility
 {
     public const BindingFlags All = Static | Instance | BindingFlags.FlattenHierarchy;
